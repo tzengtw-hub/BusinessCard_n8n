@@ -146,6 +146,7 @@ h1.title{margin:0;font-size:19px;font-weight:700;letter-spacing:.02em}
       <button class="chip" id="f-all" type="button" aria-pressed="true">全部</button>
       <button class="chip" id="f-fix" type="button" aria-pressed="false">需校正</button>
       <button class="chip" id="f-memo" type="button" aria-pressed="false">有備註</button>
+      <button class="chip" id="f-del" type="button" aria-pressed="false">已刪除</button>
       <button class="chip" id="f-merge" type="button" aria-pressed="true">合併正反面</button>
       <button class="chip" id="reload" type="button">重新整理</button>
     </div>
@@ -313,13 +314,18 @@ function needsFix(c) { return c.辨識狀態 !== "ok" || !c.姓名; }
 
 function visible() {
   var s = q.trim().toLowerCase();
-  return cards.filter(function (c) {
+  var out = cards.filter(function (c) {
+    // 已刪除的只在「已刪除」檢視裡出現，其他檢視一律藏起來
+    if (isOn(c.已刪除) !== (filter === "deleted")) return false;
     if (filter === "fix" && !needsFix(c)) return false;
     if (filter === "memo" && !String(c.備註 || "").trim()) return false;
     if (!s) return true;
     return [c.姓名, c.alt, c.公司, c.職稱, c.email, c.電話, c.手機, c.備註]
       .some(function (v) { return String(v || "").toLowerCase().indexOf(s) !== -1; });
   });
+  // 釘選的排最前面；其餘維持原順序（試算表的寫入順序＝由舊到新）
+  out.sort(function (a, b) { return (isOn(b.釘選) ? 1 : 0) - (isOn(a.釘選) ? 1 : 0); });
+  return out;
 }
 
 function initial(c) {
@@ -351,6 +357,7 @@ function render() {
     else { sub.textContent = [c.公司, c.職稱].filter(Boolean).join("・") || "—"; }
     main.appendChild(nm); main.appendChild(sub);
     var end = document.createElement("div"); end.className = "row-end";
+    if (isOn(c.釘選)) { var t0 = document.createElement("span"); t0.className = "tag faces"; t0.textContent = "釘選"; end.appendChild(t0); }
     if (needsFix(c)) { var t1 = document.createElement("span"); t1.className = "tag warn"; t1.textContent = c.辨識狀態 === "空白" ? "空白" : "待補"; end.appendChild(t1); }
     if (memo) { var t2 = document.createElement("span"); t2.className = "tag"; t2.textContent = "備註"; end.appendChild(t2); }
     if (c.faces.length > 1) { var t3 = document.createElement("span"); t3.className = "tag faces"; t3.textContent = c.faces.length + " 面"; end.appendChild(t3); }
@@ -381,18 +388,30 @@ function action(label, href, primary) {
   return a;
 }
 
-function saveMemo(card, text) {
-  // 更新 API 靠 卡片ID 定位那一列，沒有就寫不了。
+// 更新 API 靠 卡片ID 定位那一列，沒有就寫不了。
+// fields 只放真的要改的欄位——後端是 autoMapInputData，送什麼就蓋什麼。
+function patchCard(card, fields) {
   if (!card.卡片ID) return Promise.reject(new Error("這筆沒有卡片ID"));
+  var body = { "卡片ID": card.卡片ID };
+  for (var k in fields) body[k] = fields[k];
   return fetch(API + "/card-note", {
     method: "POST",
     headers: { "X-API-Key": apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ "卡片ID": card.卡片ID, "備註": text })
+    body: JSON.stringify(body)
   }).then(function (r) {
     if (!r.ok) throw new Error("HTTP " + r.status);
+    // 本機資料同步更新，使用者不必等下一次重新整理才看到結果
+    for (var k2 in fields) {
+      card[k2] = fields[k2];
+      card.faces.forEach(function (f) { if (f.卡片ID === card.卡片ID) f[k2] = fields[k2]; });
+    }
+    ls(false, LS_CACHE, JSON.stringify(RAW));
     return true;
   });
 }
+
+function saveMemo(card, text) { return patchCard(card, { "備註": text }); }
+var isOn = function (v) { var s = String(v == null ? "" : v).trim().toLowerCase(); return s !== "" && s !== "0" && s !== "false"; };
 
 function openCard(c) {
   var sheetEl = $("sheet");
@@ -493,6 +512,50 @@ function openCard(c) {
   dl.appendChild(memoBox);
   inner.appendChild(dl);
 
+  // 釘選與刪除：都靠 卡片ID 寫回，沒有的舊資料就不給這兩顆鍵
+  if (c.卡片ID) {
+    var manage = document.createElement("div"); manage.className = "vcf";
+    var pinned = isOn(c.釘選), deleted = isOn(c.已刪除);
+
+    var pinBtn = document.createElement("button");
+    pinBtn.type = "button"; pinBtn.className = "act" + (pinned ? " primary" : "");
+    pinBtn.textContent = pinned ? "取消釘選" : "釘選到最上面";
+    pinBtn.addEventListener("click", function () {
+      pinBtn.disabled = true;
+      patchCard(c, { "釘選": pinned ? "" : "1" }).then(function () {
+        toast(pinned ? "已取消釘選" : "已釘選");
+        closeCard();
+      }, function (err) { pinBtn.disabled = false; toast("改不動：" + err.message); });
+    });
+    manage.appendChild(pinBtn);
+
+    var delBtn = document.createElement("button");
+    delBtn.type = "button"; delBtn.className = "act";
+    delBtn.textContent = deleted ? "復原" : "刪除";
+    var armed = false;
+    delBtn.addEventListener("click", function () {
+      if (deleted) {
+        delBtn.disabled = true;
+        patchCard(c, { "已刪除": "" }).then(function () { toast("已復原"); closeCard(); },
+          function (err) { delBtn.disabled = false; toast("復原失敗：" + err.message); });
+        return;
+      }
+      // 兩段式確認，不用 confirm()：不是每個瀏覽器環境都會顯示它
+      if (!armed) {
+        armed = true;
+        delBtn.textContent = "再按一次確認刪除";
+        delBtn.style.color = "var(--bad)";
+        setTimeout(function () { if (armed) { armed = false; delBtn.textContent = "刪除"; delBtn.style.color = ""; } }, 4000);
+        return;
+      }
+      delBtn.disabled = true;
+      patchCard(c, { "已刪除": "1" }).then(function () { toast("已刪除，可在「已刪除」檢視復原"); closeCard(); },
+        function (err) { delBtn.disabled = false; toast("刪除失敗：" + err.message); });
+    });
+    manage.appendChild(delBtn);
+    inner.appendChild(manage);
+  }
+
   var vrow = document.createElement("div"); vrow.className = "vcf";
   var dlBtn = document.createElement("button");
   dlBtn.type = "button"; dlBtn.className = "act primary"; dlBtn.textContent = "存入通訊錄";
@@ -572,7 +635,7 @@ $("clear").addEventListener("click", function () { q = ""; $("q").value = ""; $(
 
 function setFilter(name) {
   filter = name;
-  [["all", "f-all"], ["fix", "f-fix"], ["memo", "f-memo"]].forEach(function (p) {
+  [["all", "f-all"], ["fix", "f-fix"], ["memo", "f-memo"], ["deleted", "f-del"]].forEach(function (p) {
     $(p[1]).setAttribute("aria-pressed", String(filter === p[0]));
   });
   render();
@@ -580,6 +643,29 @@ function setFilter(name) {
 $("f-all").addEventListener("click", function () { setFilter("all"); });
 $("f-fix").addEventListener("click", function () { setFilter(filter === "fix" ? "all" : "fix"); });
 $("f-memo").addEventListener("click", function () { setFilter(filter === "memo" ? "all" : "memo"); });
+$("f-del").addEventListener("click", function () { setFilter(filter === "deleted" ? "all" : "deleted"); });
+
+// 從左緣往右滑返回清單。加到主畫面後是獨立視窗，沒有瀏覽器的返回鍵，
+// iOS 也不會給系統返回手勢，所以要自己做。
+(function () {
+  var el = $("sheet"), sx = 0, sy = 0, tracking = false;
+  el.addEventListener("touchstart", function (e) {
+    if (el.hidden || e.touches.length !== 1) return;
+    var t = e.touches[0];
+    // 只認左緣起手，否則會跟頁面內的水平捲動打架
+    tracking = t.clientX <= 32;
+    sx = t.clientX; sy = t.clientY;
+  }, { passive: true });
+  el.addEventListener("touchmove", function (e) {
+    if (!tracking || e.touches.length !== 1) return;
+    var t = e.touches[0];
+    // 垂直動作優先判定為捲動，不要誤觸返回
+    if (Math.abs(t.clientY - sy) > 50) { tracking = false; return; }
+    if (t.clientX - sx > 70) { tracking = false; closeCard(); }
+  }, { passive: true });
+  el.addEventListener("touchend", function () { tracking = false; }, { passive: true });
+  el.addEventListener("touchcancel", function () { tracking = false; }, { passive: true });
+})();
 $("f-merge").addEventListener("click", function () {
   merge = !merge; $("f-merge").setAttribute("aria-pressed", String(merge)); rebuild();
 });
