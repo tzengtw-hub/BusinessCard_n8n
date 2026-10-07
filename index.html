@@ -202,9 +202,38 @@ function telHref(num) {
   return s ? "tel:" + s + (ext ? ",," + ext : "") : null;
 }
 
-function driveThumb(url, w) {
+function driveId(url) {
   var m = String(url || "").match(/\/d\/([A-Za-z0-9_-]+)/);
-  return m ? "https://drive.google.com/thumbnail?id=" + m[1] + "&sz=w" + (w || 800) : null;
+  return m ? m[1] : null;
+}
+
+// 圖片一定要經由 n8n 代理。直接 <img src="drive.google.com/thumbnail?id=…">
+// 對私有檔案永遠失敗：瀏覽器不會把 SameSite=Lax 的 Google cookie 送給跨站的
+// 圖片請求，所以請求到達 Drive 時是未驗證的——跟有沒有登入 Google 無關。
+// 而 img 標籤無法自訂標頭，所以要用 fetch 帶 X-API-Key 取回再轉成 blob URL。
+var objectUrls = [];
+function loadFace(box, fileId, driveUrl) {
+  fetch(API + "/card-image?id=" + encodeURIComponent(fileId), { headers: { "X-API-Key": apiKey } })
+    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.blob(); })
+    .then(function (blob) {
+      if (!blob || !blob.size) throw new Error("回應是空的");
+      var u = URL.createObjectURL(blob);
+      objectUrls.push(u);
+      box.textContent = "";
+      var img = document.createElement("img");
+      img.src = u; img.alt = "名片原圖";
+      box.appendChild(img);
+    })
+    .catch(function (err) {
+      box.textContent = "";
+      var fb = document.createElement("div"); fb.className = "face-fallback";
+      fb.textContent = "圖片載入失敗：" + err.message;
+      var link = document.createElement("a");
+      link.href = driveUrl; link.target = "_blank"; link.rel = "noopener";
+      link.textContent = "改用 Drive 開啟";
+      link.style.display = "block"; link.style.marginTop = "8px";
+      fb.appendChild(link); box.appendChild(fb);
+    });
 }
 
 function vcard(c) {
@@ -379,23 +408,12 @@ function openCard(c) {
   var faces = document.createElement("div"); faces.className = "faces";
   c.faces.forEach(function (f) {
     var box = document.createElement("div"); box.className = "face";
-    var thumb = driveThumb(f.圖片連結, 800);
-    if (thumb) {
-      var a = document.createElement("a");
-      a.href = f.圖片連結; a.target = "_blank"; a.rel = "noopener";
-      var img = document.createElement("img");
-      img.src = thumb; img.alt = "名片原圖"; img.loading = "lazy";
-      // Drive 縮圖要求瀏覽器已登入該 Google 帳號；載不出來就說清楚原因。
-      img.addEventListener("error", function () {
-        box.textContent = "";
-        var fb = document.createElement("div"); fb.className = "face-fallback";
-        fb.textContent = "圖片載入失敗。請先在這個瀏覽器登入存放檔案的 Google 帳號，或點這裡到 Drive 開啟。";
-        var link = document.createElement("a");
-        link.href = f.圖片連結; link.target = "_blank"; link.rel = "noopener";
-        link.textContent = "在 Drive 開啟"; link.style.display = "block"; link.style.marginTop = "8px";
-        fb.appendChild(link); box.appendChild(fb);
-      });
-      a.appendChild(img); box.appendChild(a);
+    var fid = driveId(f.圖片連結);
+    if (fid) {
+      var ph = document.createElement("div"); ph.className = "face-fallback";
+      ph.textContent = "載入中…";
+      box.appendChild(ph);
+      loadFace(box, fid, f.圖片連結);
     } else {
       var fb2 = document.createElement("div"); fb2.className = "face-fallback";
       fb2.textContent = "這筆沒有圖片連結";
@@ -504,6 +522,9 @@ function closeCard() {
   $("sheet").hidden = true;
   $("sheet").textContent = "";
   document.body.style.overflow = "";
+  // blob URL 不會自己消失，不釋放的話每看一張名片就多佔一份記憶體
+  objectUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} });
+  objectUrls = [];
   render();
 }
 
