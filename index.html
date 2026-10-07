@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f6b63">
+<title>名片簿</title>
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f2f4f5;--surface:#fff;--surface-2:#e9edef;
+  --fg:#16211f;--fg-dim:#5b6b68;--fg-faint:#8b9a97;--line:#d7dedd;
+  --accent:#0f6b63;--accent-soft:#d8ecea;--on-accent:#fff;
+  --warn:#9a5b00;--warn-soft:#fbeedb;--bad:#a32b20;
+  --font-ui:"Noto Sans TC","Helvetica Neue",Arial,sans-serif;
+  --font-data:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r:12px;color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#101615;--surface:#19211f;--surface-2:#222b29;
+  --fg:#e8eeec;--fg-dim:#9aaaa6;--fg-faint:#6d7d79;--line:#2c3735;
+  --accent:#5fd3c6;--accent-soft:#17322f;--on-accent:#08201e;
+  --warn:#e8b65f;--warn-soft:#352a16;--bad:#f08a7e;color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#101615;--surface:#19211f;--surface-2:#222b29;
+  --fg:#e8eeec;--fg-dim:#9aaaa6;--fg-faint:#6d7d79;--line:#2c3735;
+  --accent:#5fd3c6;--accent-soft:#17322f;--on-accent:#08201e;
+  --warn:#e8b65f;--warn-soft:#352a16;--bad:#f08a7e;color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-ui);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+img{max-width:100%}
+[hidden]{display:none!important}
+.wrap{max-width:560px;margin:0 auto;min-height:100%}
+
+/* 設定 key 的畫面 */
+.gate{padding:calc(48px + env(safe-area-inset-top,0px)) 20px 40px;max-width:420px;margin:0 auto}
+.gate h1{font-size:22px;margin:0 0 6px}
+.gate p{color:var(--fg-dim);font-size:13.5px;margin:0 0 20px;line-height:1.7}
+.gate label{display:block;font-size:12px;color:var(--fg-faint);letter-spacing:.05em;margin-bottom:6px}
+.gate input{width:100%;font:inherit;padding:10px 12px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--fg)}
+.gate button{margin-top:12px;width:100%;font:inherit;font-weight:500;padding:11px;border-radius:9px;border:0;background:var(--accent);color:var(--on-accent);cursor:pointer}
+.gate .err{color:var(--bad);font-size:13px;margin-top:10px}
+
+/* 頂部 */
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bg);border-bottom:1px solid var(--line);padding:14px 16px 10px}
+.top-row{display:flex;align-items:baseline;gap:10px}
+h1.title{margin:0;font-size:19px;font-weight:700;letter-spacing:.02em}
+.count{font-family:var(--font-data);font-size:12px;color:var(--fg-faint);font-variant-numeric:tabular-nums}
+.sync{margin-left:auto;font-size:11.5px;color:var(--fg-faint)}
+.sync.bad{color:var(--bad)}
+.search{margin-top:10px;position:relative;display:flex}
+.search input{flex:1;min-width:0;font:inherit;padding:9px 34px 9px 12px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--fg)}
+.clear{position:absolute;right:4px;top:50%;transform:translateY(-50%);border:0;background:none;color:var(--fg-faint);font-size:18px;width:28px;height:28px;cursor:pointer;border-radius:6px}
+.chips{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+.chip{font:inherit;font-size:12.5px;padding:4px 11px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg-dim);cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:500}
+
+/* 清單 */
+.list{padding:8px 16px 40px;display:flex;flex-direction:column;gap:7px}
+.row{display:flex;gap:11px;align-items:center;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:11px 12px;cursor:pointer;font:inherit;color:inherit}
+.row:hover{border-color:var(--accent)}
+.row:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.ini{flex:none;width:40px;height:40px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:700}
+.row-main{min-width:0;flex:1}
+.row-name{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-alt{color:var(--fg-faint);font-size:12.5px;font-weight:400}
+.row-sub{color:var(--fg-dim);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-sub.has-memo{color:var(--fg)}
+.row-end{flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.tag{font-size:10.5px;padding:2px 6px;border-radius:5px;letter-spacing:.04em;background:var(--surface-2);color:var(--fg-faint)}
+.tag.warn{background:var(--warn-soft);color:var(--warn);font-weight:500}
+.tag.faces{background:var(--accent-soft);color:var(--accent)}
+.empty{text-align:center;color:var(--fg-faint);padding:48px 16px;font-size:14px;line-height:1.8}
+
+/* 詳細頁 */
+.sheet{position:fixed;inset:0;z-index:40;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch}
+.sheet-in{max-width:560px;margin:0 auto;padding:0 16px 48px}
+.sheet-top{position:sticky;top:0;z-index:2;background:var(--bg);padding:calc(10px + env(safe-area-inset-top,0px)) 16px 10px;display:flex;gap:10px;border-bottom:1px solid var(--line);margin:0 -16px 16px}
+.back{font:inherit;border:0;background:none;color:var(--accent);cursor:pointer;padding:4px 0;font-weight:500}
+.faces{display:flex;flex-direction:column;gap:9px;margin-bottom:18px}
+.face{border-radius:var(--r);border:1px solid var(--line);background:var(--surface-2);overflow:hidden;position:relative}
+.face img{display:block;width:100%;height:auto}
+.face a{display:block}
+.face-fallback{aspect-ratio:85/54;display:grid;place-items:center;text-align:center;padding:14px;color:var(--fg-faint);font-size:11.5px;line-height:1.7}
+.hero-name{font-size:23px;font-weight:700;margin:0 0 2px;text-wrap:balance}
+.hero-alt{color:var(--fg-dim);font-size:15px;margin:0 0 3px}
+.hero-org{color:var(--fg-dim);font-size:14px;margin:0}
+.hero-title{color:var(--fg-faint);font-size:13px;margin:3px 0 0}
+.acts{display:flex;gap:7px;margin:16px 0 20px;flex-wrap:wrap}
+.act{flex:1 1 0;min-width:84px;font:inherit;font-size:13px;font-weight:500;padding:10px 6px;border-radius:10px;cursor:pointer;text-align:center;border:1px solid var(--line);background:var(--surface);color:var(--accent);text-decoration:none;display:block}
+.act.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.act[aria-disabled="true"]{color:var(--fg-faint);cursor:default}
+.fields{display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin:0}
+.f{background:var(--surface);padding:10px 13px;display:flex;gap:12px;align-items:baseline}
+.f dt{flex:none;width:56px;color:var(--fg-faint);font-size:12px;letter-spacing:.05em;margin:0}
+.f dd{margin:0;min-width:0;flex:1;word-break:break-word}
+.f dd.data{font-family:var(--font-data);font-size:13.5px;font-variant-numeric:tabular-nums}
+.copy{font:inherit;font-size:11px;border:1px solid var(--line);background:var(--surface-2);color:var(--fg-dim);border-radius:6px;padding:2px 7px;cursor:pointer;flex:none}
+.memo{background:var(--surface);padding:11px 13px}
+.memo-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:7px}
+.memo-head .lbl{color:var(--fg-faint);font-size:12px;letter-spacing:.05em}
+.memo-state{font-size:11.5px;color:var(--fg-faint)}
+.memo-state.saved{color:var(--accent)}
+.memo-state.bad{color:var(--bad)}
+.memo textarea{width:100%;min-height:76px;resize:vertical;font:inherit;font-size:14px;line-height:1.6;padding:9px 10px;border-radius:9px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.memo textarea:disabled{opacity:.6}
+.memo-hint{margin:6px 0 0;font-size:11.5px;color:var(--fg-faint);line-height:1.6}
+.vcf{margin-top:18px;display:flex;gap:7px}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(22px + env(safe-area-inset-bottom,0px));z-index:60;background:var(--fg);color:var(--bg);padding:8px 15px;border-radius:999px;font-size:13px;opacity:0;transition:opacity .18s;pointer-events:none;max-width:88vw;text-align:center}
+.toast.on{opacity:1}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<div class="gate" id="gate" hidden>
+  <h1>名片簿</h1>
+  <p>第一次使用請填入伺服器位址與存取密碼。兩者只存在這台裝置的瀏覽器裡，不會寫進程式碼，也不會送到別的地方。</p>
+  <label for="base">伺服器位址</label>
+  <input id="base" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://……/webhook">
+  <div style="height:12px"></div>
+  <label for="key">存取密碼</label>
+  <input id="key" type="password" autocomplete="current-password" enterkeyhint="go">
+  <button id="go" type="button">進入</button>
+  <div class="err" id="gate-err" hidden></div>
+</div>
+
+<div class="wrap" id="app" hidden>
+  <header class="top">
+    <div class="top-row">
+      <h1 class="title">名片簿</h1>
+      <span class="count" id="count"></span>
+      <span class="sync" id="sync"></span>
+    </div>
+    <div class="search">
+      <input id="q" type="search" placeholder="搜尋姓名、公司、職稱、信箱、電話、備註" autocomplete="off">
+      <button class="clear" id="clear" type="button" aria-label="清除搜尋" hidden>&times;</button>
+    </div>
+    <div class="chips">
+      <button class="chip" id="f-all" type="button" aria-pressed="true">全部</button>
+      <button class="chip" id="f-fix" type="button" aria-pressed="false">需校正</button>
+      <button class="chip" id="f-memo" type="button" aria-pressed="false">有備註</button>
+      <button class="chip" id="f-merge" type="button" aria-pressed="true">合併正反面</button>
+      <button class="chip" id="reload" type="button">重新整理</button>
+    </div>
+  </header>
+  <div class="list" id="list"></div>
+</div>
+
+<div class="sheet" id="sheet" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+// 伺服器位址不寫死在程式碼裡：GitHub Pages 的 repo 是公開的，
+// 寫死等於把自家 n8n 的位置公告出去並被搜尋引擎索引。
+var LS_API = "mingpian.api";
+var LS_KEY = "mingpian.key";
+var LS_CACHE = "mingpian.cache";
+
+var $ = function (id) { return document.getElementById(id); };
+function ls(get, k, v) {
+  try { return get ? localStorage.getItem(k) : localStorage.setItem(k, v); }
+  catch (e) { return null; }
+}
+function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+
+var API = ls(true, LS_API) || "";
+var apiKey = ls(true, LS_KEY) || "";
+var RAW = [], cards = [], merge = true, filter = "all", q = "";
+
+/* ---------- 工具 ---------- */
+var hasCJK = function (s) { return /[一-鿿]/.test(s || ""); };
+
+function toast(msg) {
+  var t = $("toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove("on"); }, 2000);
+}
+
+function copy(text, label) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(
+      function () { toast("已複製" + (label ? "：" + label : "")); },
+      function () { toast("瀏覽器不允許複製，請手動選取"); });
+  } else { toast("瀏覽器不允許複製，請手動選取"); }
+}
+
+// 分機：# 在 URI 裡是錨點，tel:0912#34 會被截斷，撥出去少了分機。
+// 逗號是撥號暫停，手機撥完主號會自動補撥。
+function telHref(num) {
+  if (!num) return null;
+  var s = String(num).trim(), ext = "";
+  var m = s.match(/#\s*(\d+)\s*$/);
+  if (m) { ext = m[1]; s = s.slice(0, m.index); }
+  s = s.replace(/[^\d+]/g, "");
+  return s ? "tel:" + s + (ext ? ",," + ext : "") : null;
+}
+
+function driveThumb(url, w) {
+  var m = String(url || "").match(/\/d\/([A-Za-z0-9_-]+)/);
+  return m ? "https://drive.google.com/thumbnail?id=" + m[1] + "&sz=w" + (w || 800) : null;
+}
+
+function vcard(c) {
+  var L = ["BEGIN:VCARD", "VERSION:3.0"];
+  if (c.姓名) L.push("FN:" + c.姓名);
+  if (c.alt) L.push("NICKNAME:" + c.alt);
+  if (c.公司) L.push("ORG:" + c.公司);
+  if (c.職稱) L.push("TITLE:" + c.職稱);
+  if (c.電話) L.push("TEL;TYPE=WORK,VOICE:" + c.電話);
+  if (c.手機) L.push("TEL;TYPE=CELL:" + c.手機);
+  if (c.email) L.push("EMAIL;TYPE=WORK:" + c.email);
+  if (c.地址) L.push("ADR;TYPE=WORK:;;" + String(c.地址).replace(/[;,]/g, " ") + ";;;;");
+  if (c.網站) L.push("URL:" + String(c.網站).split(",")[0].trim());
+  if (c.備註) L.push("NOTE:" + String(c.備註).replace(/\r?\n/g, "\\n"));
+  L.push("END:VCARD");
+  return L.join("\r\n");
+}
+
+/* ---------- 取資料 ---------- */
+function fetchCards() {
+  setSync("更新中…");
+  return fetch(API + "/cards", { headers: { "X-API-Key": apiKey } })
+    .then(function (r) {
+      if (r.status === 401 || r.status === 403) { var e = new Error("auth"); e.auth = true; throw e; }
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (data) {
+      RAW = Array.isArray(data) ? data : [data];
+      ls(false, LS_CACHE, JSON.stringify(RAW));
+      setSync("");
+      rebuild();
+      return true;
+    });
+}
+
+function setSync(text, bad) {
+  var el = $("sync");
+  el.textContent = text || "";
+  el.className = "sync" + (bad ? " bad" : "");
+}
+
+/* ---------- 合併正反面 ---------- */
+// 雙語名片的兩面各是一筆完整資料，不是「一筆加一筆空白」。
+// 同一個 email 視為同一人，中文面與英文面都保留。
+function build(doMerge) {
+  if (!doMerge) return RAW.map(function (c) { var o = {}; for (var k in c) o[k] = c[k]; o.faces = [c]; o.alt = ""; return o; });
+  var byEmail = {}, out = [];
+  RAW.forEach(function (c) {
+    var k = String(c.email || "").trim().toLowerCase();
+    if (!k) { var o = {}; for (var x in c) o[x] = c[x]; o.faces = [c]; o.alt = ""; out.push(o); return; }
+    if (!byEmail[k]) { byEmail[k] = { faces: [] }; out.push(byEmail[k]); }
+    byEmail[k].faces.push(c);
+  });
+  out.forEach(function (g) {
+    if (g.姓名 !== undefined) return;
+    var f = g.faces, cn = null, en = null, i;
+    for (i = 0; i < f.length; i++) if (!cn && hasCJK(f[i].姓名)) cn = f[i];
+    for (i = 0; i < f.length; i++) if (!en && f[i] !== cn && f[i].姓名) en = f[i];
+    var pri = cn || en || f[0];
+    for (var k in pri) if (k !== "faces") g[k] = pri[k];
+    g.alt = (cn && en && en.姓名 !== cn.姓名) ? en.姓名 : "";
+    // 缺的欄位從另一面補上
+    f.forEach(function (x) {
+      ["公司","職稱","電話","手機","email","地址","網站","備註"].forEach(function (k) {
+        if (!g[k] && x[k]) g[k] = x[k];
+      });
+    });
+  });
+  return out;
+}
+
+function rebuild() { cards = build(merge); render(); }
+
+/* ---------- 清單 ---------- */
+function needsFix(c) { return c.辨識狀態 !== "ok" || !c.姓名; }
+
+function visible() {
+  var s = q.trim().toLowerCase();
+  return cards.filter(function (c) {
+    if (filter === "fix" && !needsFix(c)) return false;
+    if (filter === "memo" && !String(c.備註 || "").trim()) return false;
+    if (!s) return true;
+    return [c.姓名, c.alt, c.公司, c.職稱, c.email, c.電話, c.手機, c.備註]
+      .some(function (v) { return String(v || "").toLowerCase().indexOf(s) !== -1; });
+  });
+}
+
+function initial(c) {
+  var n = String(c.姓名 || c.公司 || "?").trim();
+  return hasCJK(n) ? n.charAt(0) : n.charAt(0).toUpperCase();
+}
+
+function render() {
+  var vis = visible();
+  $("count").textContent = vis.length + " / " + cards.length + " 筆";
+  var listEl = $("list");
+  listEl.textContent = "";
+  if (!vis.length) {
+    var d = document.createElement("div"); d.className = "empty";
+    d.textContent = q ? "找不到符合「" + q + "」的名片" : "沒有符合條件的名片";
+    listEl.appendChild(d); return;
+  }
+  vis.forEach(function (c) {
+    var b = document.createElement("button");
+    b.type = "button"; b.className = "row";
+    var ini = document.createElement("div"); ini.className = "ini"; ini.textContent = initial(c);
+    var main = document.createElement("div"); main.className = "row-main";
+    var nm = document.createElement("div"); nm.className = "row-name";
+    nm.textContent = c.姓名 || "（未辨識出姓名）";
+    if (c.alt) { var a = document.createElement("span"); a.className = "row-alt"; a.textContent = "  " + c.alt; nm.appendChild(a); }
+    var sub = document.createElement("div"); sub.className = "row-sub";
+    var memo = String(c.備註 || "").trim();
+    if (memo) { sub.classList.add("has-memo"); sub.textContent = memo; }
+    else { sub.textContent = [c.公司, c.職稱].filter(Boolean).join("・") || "—"; }
+    main.appendChild(nm); main.appendChild(sub);
+    var end = document.createElement("div"); end.className = "row-end";
+    if (needsFix(c)) { var t1 = document.createElement("span"); t1.className = "tag warn"; t1.textContent = c.辨識狀態 === "空白" ? "空白" : "待補"; end.appendChild(t1); }
+    if (memo) { var t2 = document.createElement("span"); t2.className = "tag"; t2.textContent = "備註"; end.appendChild(t2); }
+    if (c.faces.length > 1) { var t3 = document.createElement("span"); t3.className = "tag faces"; t3.textContent = c.faces.length + " 面"; end.appendChild(t3); }
+    b.appendChild(ini); b.appendChild(main); b.appendChild(end);
+    b.addEventListener("click", function () { openCard(c); });
+    listEl.appendChild(b);
+  });
+}
+
+/* ---------- 詳細頁 ---------- */
+function fieldRow(label, value, mono) {
+  var d = document.createElement("div"); d.className = "f";
+  var dt = document.createElement("dt"); dt.textContent = label;
+  var dd = document.createElement("dd"); dd.textContent = value;
+  if (mono) dd.className = "data";
+  var b = document.createElement("button");
+  b.type = "button"; b.className = "copy"; b.textContent = "複製";
+  b.addEventListener("click", function () { copy(value, label); });
+  d.appendChild(dt); d.appendChild(dd); d.appendChild(b);
+  return d;
+}
+
+function action(label, href, primary) {
+  var a = document.createElement(href ? "a" : "span");
+  a.className = "act" + (primary ? " primary" : "");
+  a.textContent = label;
+  if (href) a.href = href; else a.setAttribute("aria-disabled", "true");
+  return a;
+}
+
+function saveMemo(card, text) {
+  // 更新 API 靠 卡片ID 定位那一列，沒有就寫不了。
+  if (!card.卡片ID) return Promise.reject(new Error("這筆沒有卡片ID"));
+  return fetch(API + "/card-note", {
+    method: "POST",
+    headers: { "X-API-Key": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ "卡片ID": card.卡片ID, "備註": text })
+  }).then(function (r) {
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return true;
+  });
+}
+
+function openCard(c) {
+  var sheetEl = $("sheet");
+  sheetEl.textContent = "";
+  var inner = document.createElement("div"); inner.className = "sheet-in";
+
+  var top = document.createElement("div"); top.className = "sheet-top";
+  var back = document.createElement("button");
+  back.type = "button"; back.className = "back"; back.textContent = "← 返回";
+  back.addEventListener("click", closeCard);
+  top.appendChild(back); inner.appendChild(top);
+
+  var faces = document.createElement("div"); faces.className = "faces";
+  c.faces.forEach(function (f) {
+    var box = document.createElement("div"); box.className = "face";
+    var thumb = driveThumb(f.圖片連結, 800);
+    if (thumb) {
+      var a = document.createElement("a");
+      a.href = f.圖片連結; a.target = "_blank"; a.rel = "noopener";
+      var img = document.createElement("img");
+      img.src = thumb; img.alt = "名片原圖"; img.loading = "lazy";
+      // Drive 縮圖要求瀏覽器已登入該 Google 帳號；載不出來就說清楚原因。
+      img.addEventListener("error", function () {
+        box.textContent = "";
+        var fb = document.createElement("div"); fb.className = "face-fallback";
+        fb.textContent = "圖片載入失敗。請先在這個瀏覽器登入存放檔案的 Google 帳號，或點這裡到 Drive 開啟。";
+        var link = document.createElement("a");
+        link.href = f.圖片連結; link.target = "_blank"; link.rel = "noopener";
+        link.textContent = "在 Drive 開啟"; link.style.display = "block"; link.style.marginTop = "8px";
+        fb.appendChild(link); box.appendChild(fb);
+      });
+      a.appendChild(img); box.appendChild(a);
+    } else {
+      var fb2 = document.createElement("div"); fb2.className = "face-fallback";
+      fb2.textContent = "這筆沒有圖片連結";
+      box.appendChild(fb2);
+    }
+    faces.appendChild(box);
+  });
+  inner.appendChild(faces);
+
+  var h = document.createElement("h2"); h.className = "hero-name";
+  h.textContent = c.姓名 || "（未辨識出姓名）"; inner.appendChild(h);
+  if (c.alt) { var p1 = document.createElement("p"); p1.className = "hero-alt"; p1.textContent = c.alt; inner.appendChild(p1); }
+  if (c.公司) { var p2 = document.createElement("p"); p2.className = "hero-org"; p2.textContent = c.公司; inner.appendChild(p2); }
+  if (c.職稱) { var p3 = document.createElement("p"); p3.className = "hero-title"; p3.textContent = c.職稱; inner.appendChild(p3); }
+
+  var acts = document.createElement("div"); acts.className = "acts";
+  acts.appendChild(action("撥市話", telHref(c.電話)));
+  acts.appendChild(action("撥手機", telHref(c.手機)));
+  acts.appendChild(action("寄信", c.email ? "mailto:" + c.email : null));
+  acts.appendChild(action("開網站", c.網站 ? "https://" + String(c.網站).split(",")[0].trim().replace(/^https?:\/\//, "") : null));
+  inner.appendChild(acts);
+
+  var dl = document.createElement("div"); dl.className = "fields";
+  if (c.電話) dl.appendChild(fieldRow("電話", c.電話, true));
+  if (c.手機) dl.appendChild(fieldRow("手機", c.手機, true));
+  if (c.email) dl.appendChild(fieldRow("信箱", c.email, true));
+  if (c.地址) dl.appendChild(fieldRow("地址", c.地址, false));
+  if (c.網站) dl.appendChild(fieldRow("網站", c.網站, true));
+
+  var st = document.createElement("div"); st.className = "f";
+  var stdt = document.createElement("dt"); stdt.textContent = "狀態";
+  var stdd = document.createElement("dd"); stdd.textContent = c.辨識狀態 === "ok" ? "已辨識" : (c.辨識狀態 || "—");
+  st.appendChild(stdt); st.appendChild(stdd); dl.appendChild(st);
+
+  // 備註：唯一由人手寫的欄位。OCR 只新增列，更新 API 只動備註，兩者不重疊。
+  var memoBox = document.createElement("div"); memoBox.className = "memo";
+  var head = document.createElement("div"); head.className = "memo-head";
+  var lbl = document.createElement("span"); lbl.className = "lbl"; lbl.textContent = "備註";
+  var state = document.createElement("span"); state.className = "memo-state";
+  head.appendChild(lbl); head.appendChild(state);
+  var ta = document.createElement("textarea");
+  ta.id = "memo-" + (c.卡片ID || "none");
+  ta.value = c.備註 || "";
+  ta.placeholder = "見面的時間地點、聊了什麼、對這個人的印象…";
+  var hint = document.createElement("p"); hint.className = "memo-hint";
+
+  if (!c.卡片ID) {
+    ta.disabled = true;
+    hint.textContent = "這筆是加入卡片ID之前匯入的舊資料，沒有可定位的編號，暫時無法寫備註。刪掉讓它重新辨識就會有。";
+  } else {
+    hint.textContent = "停筆約一秒自動儲存到試算表。備註也會被搜尋到。";
+    var timer = null, dirty = false;
+    var flush = function () {
+      var val = ta.value;
+      state.textContent = "儲存中…"; state.className = "memo-state";
+      saveMemo(c, val).then(function () {
+        dirty = false;
+        c.備註 = val;
+        // 合併檢視下，備註寫在主面那一列；同步回原始資料以免重新整理前不一致
+        c.faces.forEach(function (f) { if (f.卡片ID === c.卡片ID) f.備註 = val; });
+        ls(false, LS_CACHE, JSON.stringify(RAW));
+        state.textContent = "已儲存"; state.className = "memo-state saved";
+      }, function (err) {
+        state.textContent = "儲存失敗，離開前請再試一次";
+        state.className = "memo-state bad";
+        toast("備註沒存成功：" + err.message);
+      });
+    };
+    ta.addEventListener("input", function () {
+      dirty = true;
+      state.textContent = "編輯中…"; state.className = "memo-state";
+      clearTimeout(timer); timer = setTimeout(flush, 900);
+    });
+    ta.addEventListener("blur", function () { if (dirty) { clearTimeout(timer); flush(); } });
+  }
+  memoBox.appendChild(head); memoBox.appendChild(ta); memoBox.appendChild(hint);
+  dl.appendChild(memoBox);
+  inner.appendChild(dl);
+
+  var vrow = document.createElement("div"); vrow.className = "vcf";
+  var dlBtn = document.createElement("button");
+  dlBtn.type = "button"; dlBtn.className = "act primary"; dlBtn.textContent = "存入通訊錄";
+  dlBtn.addEventListener("click", function () {
+    var blob = new Blob([vcard(c)], { type: "text/vcard;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = (c.姓名 || c.公司 || "card").replace(/[\\/:*?"<>|]/g, "") + ".vcf";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  });
+  var cpBtn = document.createElement("button");
+  cpBtn.type = "button"; cpBtn.className = "act"; cpBtn.textContent = "複製 vCard";
+  cpBtn.addEventListener("click", function () { copy(vcard(c), "vCard"); });
+  vrow.appendChild(dlBtn); vrow.appendChild(cpBtn);
+  inner.appendChild(vrow);
+
+  $("sheet").appendChild(inner);
+  $("sheet").hidden = false;
+  $("sheet").scrollTop = 0;
+  document.body.style.overflow = "hidden";
+  back.focus();
+}
+
+function closeCard() {
+  $("sheet").hidden = true;
+  $("sheet").textContent = "";
+  document.body.style.overflow = "";
+  render();
+}
+
+/* ---------- 啟動 ---------- */
+function showGate(msg) {
+  $("app").hidden = true; $("sheet").hidden = true;
+  $("gate").hidden = false;
+  var e = $("gate-err");
+  if (msg) { e.textContent = msg; e.hidden = false; } else { e.hidden = true; }
+  if (API) $("base").value = API;
+  ($("base").value ? $("key") : $("base")).focus();
+}
+
+function start() {
+  $("gate").hidden = true; $("app").hidden = false;
+  var cached = ls(true, LS_CACHE);
+  if (cached) {
+    try { RAW = JSON.parse(cached); rebuild(); setSync("顯示的是上次的資料"); } catch (e) {}
+  }
+  fetchCards().catch(function (err) {
+    if (err.auth) { lsDel(LS_KEY); apiKey = ""; showGate("密碼不正確，請重新輸入。"); return; }
+    // 連不上時保留快取內容可用，而不是給一個空畫面
+    setSync(RAW.length ? "離線，顯示舊資料" : "連不上伺服器", true);
+    if (!RAW.length) {
+      $("list").textContent = "";
+      var d = document.createElement("div"); d.className = "empty";
+      d.textContent = "連不上名片伺服器。\n如果你人在外面，確認手機有連上 Tailscale。";
+      $("list").appendChild(d);
+    }
+  });
+}
+
+$("go").addEventListener("click", function () {
+  var b = $("base").value.trim().replace(/\/+$/, "");
+  var v = $("key").value.trim();
+  if (!b || !v) { var e = $("gate-err"); e.textContent = "位址和密碼都要填。"; e.hidden = false; return; }
+  if (!/^https?:\/\//i.test(b)) { var e2 = $("gate-err"); e2.textContent = "位址要以 https:// 開頭。"; e2.hidden = false; return; }
+  API = b; apiKey = v;
+  ls(false, LS_API, b); ls(false, LS_KEY, v);
+  start();
+});
+$("key").addEventListener("keydown", function (e) { if (e.key === "Enter") $("go").click(); });
+$("q").addEventListener("input", function (e) { q = e.target.value; $("clear").hidden = !q; render(); });
+$("clear").addEventListener("click", function () { q = ""; $("q").value = ""; $("clear").hidden = true; render(); $("q").focus(); });
+
+function setFilter(name) {
+  filter = name;
+  [["all", "f-all"], ["fix", "f-fix"], ["memo", "f-memo"]].forEach(function (p) {
+    $(p[1]).setAttribute("aria-pressed", String(filter === p[0]));
+  });
+  render();
+}
+$("f-all").addEventListener("click", function () { setFilter("all"); });
+$("f-fix").addEventListener("click", function () { setFilter(filter === "fix" ? "all" : "fix"); });
+$("f-memo").addEventListener("click", function () { setFilter(filter === "memo" ? "all" : "memo"); });
+$("f-merge").addEventListener("click", function () {
+  merge = !merge; $("f-merge").setAttribute("aria-pressed", String(merge)); rebuild();
+});
+$("reload").addEventListener("click", function () {
+  fetchCards().catch(function (err) {
+    if (err.auth) { lsDel(LS_KEY); apiKey = ""; showGate("密碼不正確，請重新輸入。"); }
+    else { setSync("更新失敗", true); toast("更新失敗：" + err.message); }
+  });
+});
+document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !$("sheet").hidden) closeCard(); });
+
+if (API && apiKey) start(); else showGate();
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("sw.js").catch(function () {});
+  });
+}
+</script>
+</body>
+</html>

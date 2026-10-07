@@ -1,0 +1,20 @@
+{
+  "name": "名片簿",
+  "short_name": "名片簿",
+  "description": "名片辨識結果的瀏覽、搜尋與備註",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f2f4f5",
+  "theme_color": "#0f6b63",
+  "lang": "zh-Hant",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='96' fill='%230f6b63'/%3E%3Crect x='104' y='152' width='304' height='208' rx='20' fill='none' stroke='%23d8ecea' stroke-width='22'/%3E%3Ccircle cx='186' cy='232' r='30' fill='%23d8ecea'/%3E%3Cpath d='M142 310c0-26 20-44 44-44s44 18 44 44' fill='none' stroke='%23d8ecea' stroke-width='20' stroke-linecap='round'/%3E%3Cpath d='M268 222h96M268 262h96M268 302h60' stroke='%23d8ecea' stroke-width='20' stroke-linecap='round'/%3E%3C/svg%3E",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

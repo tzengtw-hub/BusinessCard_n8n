@@ -1,0 +1,13 @@
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 編輯器
+.vscode/
+.idea/
+
+# 不要把任何本機設定或密鑰推上公開 repo
+.env
+*.local
+secrets.*
