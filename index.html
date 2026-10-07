@@ -212,18 +212,104 @@ function driveId(url) {
 // 對私有檔案永遠失敗：瀏覽器不會把 SameSite=Lax 的 Google cookie 送給跨站的
 // 圖片請求，所以請求到達 Drive 時是未驗證的——跟有沒有登入 Google 無關。
 // 而 img 標籤無法自訂標頭，所以要用 fetch 帶 X-API-Key 取回再轉成 blob URL。
-var objectUrls = [];
+//
+// 一張圖的路徑是 手機 → Tailscale 中繼 → n8n → Google Drive → 原路回來，
+// 每一跳都要搬完整的檔案（平均約 300KB），所以一次大約兩三秒。
+// 這個代價只該付一次，所以疊兩層快取：
+//   memBlob       同一次使用期間，連重新解碼都不用
+//   Cache Storage 關掉 app 也留著；只有換裝置或清掉瀏覽器資料才會重新下載
+var IMG_CACHE = "mingpian-img-v1";
+var IMG_KEEP = 150;   // Cache Storage 最多留幾張
+var MEM_KEEP = 12;    // 記憶體裡最多留幾個 blob URL
+var LS_IMG_LRU = "mingpian.imgLru";
+var imgCacheOk = typeof caches !== "undefined";
+
+var memBlob = [];     // [{id,url}]，陣列尾端是最近用到的
+function memHas(id) {
+  return memBlob.some(function (e) { return e.id === id; });
+}
+function memGet(id) {
+  for (var i = 0; i < memBlob.length; i++) {
+    if (memBlob[i].id === id) { memBlob.push(memBlob.splice(i, 1)[0]); return memBlob[memBlob.length - 1].url; }
+  }
+  return null;
+}
+function memPut(id, url) {
+  memBlob.push({ id: id, url: url });
+  // blob URL 不會自己消失，不丟掉就是一直佔著記憶體
+  while (memBlob.length > MEM_KEEP) {
+    var gone = memBlob.shift();
+    try { URL.revokeObjectURL(gone.url); } catch (e) {}
+  }
+}
+
+// Cache Storage 不記錄存取時間，所以使用順序自己記在 localStorage。
+// 這份清單可能和實際快取內容不一致（瀏覽器會自己清快取），
+// 所以它只用來決定「要不要花力氣預抓」，真正的答案一律問 Cache Storage。
+var lruArr = (function () {
+  try { var a = JSON.parse(ls(true, LS_IMG_LRU) || "[]"); return Array.isArray(a) ? a : []; }
+  catch (e) { return []; }
+})();
+function imgKey(id) { return "cardimg/" + id; }
+function isCached(id) { return lruArr.indexOf(id) >= 0; }
+function lruSave() { ls(false, LS_IMG_LRU, JSON.stringify(lruArr)); }
+function lruDrop(id) {
+  var i = lruArr.indexOf(id);
+  if (i >= 0) { lruArr.splice(i, 1); lruSave(); }
+}
+function lruTouch(id) {
+  var i = lruArr.indexOf(id);
+  if (i >= 0) lruArr.splice(i, 1);
+  lruArr.push(id);
+  var drop = lruArr.length > IMG_KEEP ? lruArr.splice(0, lruArr.length - IMG_KEEP) : [];
+  lruSave();
+  if (drop.length && imgCacheOk) {
+    caches.open(IMG_CACHE).then(function (c) {
+      drop.forEach(function (x) { c.delete(imgKey(x)); });
+    }).catch(function () {});
+  }
+}
+
+// 回傳 Promise<Blob>：先問 Cache Storage，真的沒有才走網路。
+function imgBlob(fileId) {
+  var lookup = imgCacheOk
+    ? caches.open(IMG_CACHE).then(function (c) { return c.match(imgKey(fileId)); }).catch(function () { return null; })
+    : Promise.resolve(null);
+
+  return lookup.then(function (res) {
+    if (res) { lruTouch(fileId); return res.blob(); }
+    lruDrop(fileId);  // 清單說有、實際沒有，就把清單修正回來
+    return fetch(API + "/card-image?id=" + encodeURIComponent(fileId), { headers: { "X-API-Key": apiKey } })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.blob(); })
+      .then(function (blob) {
+        if (!blob || !blob.size) throw new Error("回應是空的");
+        // 只存成功且真的有內容的回應，否則一次失敗會變成永久的壞圖
+        if (imgCacheOk) {
+          caches.open(IMG_CACHE)
+            .then(function (c) { return c.put(imgKey(fileId), new Response(blob, { headers: { "Content-Type": blob.type || "image/jpeg" } })); })
+            .then(function () { lruTouch(fileId); })
+            .catch(function () {});   // 存不下就當沒快取，不影響這次顯示
+        }
+        return blob;
+      });
+  });
+}
+
+function showFace(box, url) {
+  box.textContent = "";
+  var img = document.createElement("img");
+  img.src = url; img.alt = "名片原圖";
+  box.appendChild(img);
+}
+
 function loadFace(box, fileId, driveUrl) {
-  fetch(API + "/card-image?id=" + encodeURIComponent(fileId), { headers: { "X-API-Key": apiKey } })
-    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.blob(); })
+  var hit = memGet(fileId);
+  if (hit) { showFace(box, hit); return; }   // 同一次使用期間再點，零延遲
+  imgBlob(fileId)
     .then(function (blob) {
-      if (!blob || !blob.size) throw new Error("回應是空的");
       var u = URL.createObjectURL(blob);
-      objectUrls.push(u);
-      box.textContent = "";
-      var img = document.createElement("img");
-      img.src = u; img.alt = "名片原圖";
-      box.appendChild(img);
+      memPut(fileId, u);
+      showFace(box, u);
     })
     .catch(function (err) {
       box.textContent = "";
@@ -235,6 +321,53 @@ function loadFace(box, fileId, driveUrl) {
       link.style.display = "block"; link.style.marginTop = "8px";
       fb.appendChild(link); box.appendChild(fb);
     });
+}
+
+/* ---------- 預抓 ---------- */
+// 快取只能解決「第二次」。第一次還是要等網路，所以提早開始：
+// 清單一出來就在背景把釘選的和最前面幾張抓好，另外手指一按下某一列
+// 就插隊先抓那張——從按下到放開的這段時間，通常足夠搬完一張圖。
+var warmQueue = [], warming = false;
+
+function warmNext() {
+  if (warming) return;
+  var id = warmQueue.shift();
+  if (!id) return;
+  warming = true;
+  // 一次只抓一張。Funnel 是中繼連線，平行抓只會互相排隊，
+  // 還會拖慢使用者真正在等的那一張。
+  imgBlob(id).catch(function () {}).then(function () { warming = false; warmNext(); });
+}
+
+function warm(fileId, urgent) {
+  if (!fileId || !API || !apiKey) return;
+  if (memHas(fileId) || isCached(fileId)) return;
+  var i = warmQueue.indexOf(fileId);
+  if (i >= 0) {
+    if (!urgent) return;
+    warmQueue.splice(i, 1);
+  }
+  if (urgent) warmQueue.unshift(fileId); else warmQueue.push(fileId);
+  warmNext();
+}
+
+function thrifty() {
+  // 省流量模式或 2G 就不要自己在背景多抓東西
+  var c = navigator.connection;
+  return !!c && (c.saveData === true || c.effectiveType === "slow-2g" || c.effectiveType === "2g");
+}
+
+function firstFaceId(c) {
+  var f = c.faces && c.faces[0];
+  return f ? driveId(f.圖片連結) : null;
+}
+
+function warmList() {
+  if (thrifty()) return;
+  var vis = visible();
+  // 釘選的優先：那些就是會被反覆打開的
+  var pick = vis.filter(function (c) { return isOn(c.釘選); }).concat(vis.slice(0, 8)).slice(0, 12);
+  pick.forEach(function (c) { warm(firstFaceId(c)); });
 }
 
 function vcard(c) {
@@ -307,7 +440,7 @@ function build(doMerge) {
   return out;
 }
 
-function rebuild() { cards = build(merge); render(); }
+function rebuild() { cards = build(merge); render(); warmList(); }
 
 /* ---------- 清單 ---------- */
 function needsFix(c) { return c.辨識狀態 !== "ok" || !c.姓名; }
@@ -363,6 +496,10 @@ function render() {
     if (c.faces.length > 1) { var t3 = document.createElement("span"); t3.className = "tag faces"; t3.textContent = c.faces.length + " 面"; end.appendChild(t3); }
     b.appendChild(ini); b.appendChild(main); b.appendChild(end);
     b.addEventListener("click", function () { openCard(c); });
+    // 按下／滑過就先抓圖，不等 click
+    var pre = function () { warm(firstFaceId(c), true); };
+    b.addEventListener("pointerdown", pre);
+    b.addEventListener("mouseenter", pre);
     listEl.appendChild(b);
   });
 }
@@ -585,9 +722,8 @@ function closeCard() {
   $("sheet").hidden = true;
   $("sheet").textContent = "";
   document.body.style.overflow = "";
-  // blob URL 不會自己消失，不釋放的話每看一張名片就多佔一份記憶體
-  objectUrls.forEach(function (u) { try { URL.revokeObjectURL(u); } catch (e) {} });
-  objectUrls = [];
+  // 這裡故意不釋放 blob URL：釋放了下次點同一張又要重新下載一次。
+  // 數量由 memPut 的 LRU 控制（最多 MEM_KEEP 個）。
   render();
 }
 
