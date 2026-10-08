@@ -413,15 +413,68 @@ function setSync(text, bad) {
 /* ---------- 合併正反面 ---------- */
 // 雙語名片的兩面各是一筆完整資料，不是「一筆加一筆空白」。
 // 同一個 email 視為同一人，中文面與英文面都保留。
+// 正反面合併的鍵：email 相同「而且姓名相容」。
+//
+// 只看 email 會出事。公司共用信箱（info@ / sales@ / service@）在量大的
+// 名片收藏裡幾乎一定出現，同公司好幾個人共用一個信箱就會被併成一張卡，
+// 其他人在介面上**直接消失**——不是顯示錯誤，是看不見。
+//
+// 相容的定義：
+//   一邊沒印名字        → 併（反面常常只有 logo 和地址）
+//   去空白後完全相同    → 併
+//   一邊中文、一邊英文  → 併（雙語名片的正反面，這正是本來的目的）
+//   都中文但不同        → 不併（兩個人）
+//   都英文但不同        → 不併（兩個人）
+//
+// 還是會錯的情況：同公司兩個人共用 info@，剛好一個只有中文名、一個只有
+// 英文名。這種併錯了可以按「合併正反面」關掉合併看原始資料。
+function nameKind(s) {
+  var t = String(s || "").trim();
+  if (!t) return "none";
+  return hasCJK(t) ? "cjk" : "latin";
+}
+function sameName(a, b) {
+  var norm = function (x) { return String(x || "").trim().toLowerCase().replace(/\s+/g, ""); };
+  return norm(a) === norm(b);
+}
+function nameCompatible(a, b) {
+  var ka = nameKind(a), kb = nameKind(b);
+  if (ka === "none" || kb === "none") return true;
+  if (sameName(a, b)) return true;
+  return ka !== kb;
+}
+
+// 從別的名片庫匯入的資料是一個人一筆，本來就沒有正反面可合併，
+// 讓它們參與合併只會製造假的合併。
+function soloSource(c) {
+  var sid = String(c.來源ID || "").toLowerCase();
+  var src = String(c.來源 || "");
+  return sid.indexOf("camcard:") === 0 ||
+         src.toLowerCase().indexOf("camcard") >= 0 ||
+         src.indexOf("名片全能王") >= 0;
+}
+
 function build(doMerge) {
-  if (!doMerge) return RAW.map(function (c) { var o = {}; for (var k in c) o[k] = c[k]; o.faces = [c]; o.alt = ""; return o; });
-  var byEmail = {}, out = [];
+  var solo = function (c) { var o = {}; for (var k in c) o[k] = c[k]; o.faces = [c]; o.alt = ""; return o; };
+  if (!doMerge) return RAW.map(solo);
+
+  var buckets = {}, out = [];
   RAW.forEach(function (c) {
     var k = String(c.email || "").trim().toLowerCase();
-    if (!k) { var o = {}; for (var x in c) o[x] = c[x]; o.faces = [c]; o.alt = ""; out.push(o); return; }
-    if (!byEmail[k]) { byEmail[k] = { faces: [] }; out.push(byEmail[k]); }
-    byEmail[k].faces.push(c);
+    if (!k || soloSource(c)) { out.push(solo(c)); return; }
+
+    // 同一個 email 底下再依姓名分群：要跟群裡「每一面」都相容才併進去
+    var list = buckets[k] || (buckets[k] = []);
+    for (var i = 0; i < list.length; i++) {
+      var g = list[i];
+      var fits = g.faces.every(function (x) { return nameCompatible(x.姓名, c.姓名); });
+      if (fits) { g.faces.push(c); return; }
+    }
+    var ng = { faces: [c] };
+    list.push(ng);
+    out.push(ng);
   });
+
   out.forEach(function (g) {
     if (g.姓名 !== undefined) return;
     var f = g.faces, cn = null, en = null, i;
