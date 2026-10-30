@@ -87,6 +87,7 @@ h1.title{margin:0;font-size:19px;font-weight:700;letter-spacing:.02em}
 .face{border-radius:var(--r);border:1px solid var(--line);background:var(--surface-2);overflow:hidden;position:relative}
 .face img{display:block;width:100%;height:auto}
 .face a{display:block}
+.face[data-label]::before{content:attr(data-label);position:absolute;top:8px;left:8px;z-index:1;font-size:11px;padding:2px 8px;border-radius:5px;background:rgba(0,0,0,.6);color:#fff;letter-spacing:.04em}
 .face-fallback{aspect-ratio:85/54;display:grid;place-items:center;text-align:center;padding:14px;color:var(--fg-faint);font-size:11.5px;line-height:1.7}
 .hero-name{font-size:23px;font-weight:700;margin:0 0 2px;text-wrap:balance}
 .hero-alt{color:var(--fg-dim);font-size:15px;margin:0 0 3px}
@@ -493,6 +494,13 @@ function build(doMerge) {
   return out;
 }
 
+// 一張名片有幾面：每一列算一面，有背面照片的列再多算一面。
+function faceCount(c) {
+  var n = 0;
+  c.faces.forEach(function (f) { n += driveId(f.背面圖片連結) ? 2 : 1; });
+  return n;
+}
+
 function rebuild() { cards = build(merge); render(); warmList(); }
 
 /* ---------- 清單 ---------- */
@@ -546,7 +554,8 @@ function render() {
     if (isOn(c.釘選)) { var t0 = document.createElement("span"); t0.className = "tag faces"; t0.textContent = "釘選"; end.appendChild(t0); }
     if (needsFix(c)) { var t1 = document.createElement("span"); t1.className = "tag warn"; t1.textContent = c.辨識狀態 === "空白" ? "空白" : "待補"; end.appendChild(t1); }
     if (memo) { var t2 = document.createElement("span"); t2.className = "tag"; t2.textContent = "備註"; end.appendChild(t2); }
-    if (c.faces.length > 1) { var t3 = document.createElement("span"); t3.className = "tag faces"; t3.textContent = c.faces.length + " 面"; end.appendChild(t3); }
+    var nFaces = faceCount(c);
+    if (nFaces > 1) { var t3 = document.createElement("span"); t3.className = "tag faces"; t3.textContent = nFaces + " 面"; end.appendChild(t3); }
     b.appendChild(ini); b.appendChild(main); b.appendChild(end);
     b.addEventListener("click", function () { openCard(c); });
     // 按下／滑過就先抓圖，不等 click
@@ -615,20 +624,28 @@ function openCard(c) {
   top.appendChild(back); inner.appendChild(top);
 
   var faces = document.createElement("div"); faces.className = "faces";
-  c.faces.forEach(function (f) {
+  var addFace = function (url, label) {
     var box = document.createElement("div"); box.className = "face";
-    var fid = driveId(f.圖片連結);
+    if (label) box.setAttribute("data-label", label);
+    var fid = driveId(url);
     if (fid) {
       var ph = document.createElement("div"); ph.className = "face-fallback";
       ph.textContent = "載入中…";
       box.appendChild(ph);
-      loadFace(box, fid, f.圖片連結);
+      loadFace(box, fid, url);
     } else {
       var fb2 = document.createElement("div"); fb2.className = "face-fallback";
       fb2.textContent = "這筆沒有圖片連結";
       box.appendChild(fb2);
     }
     faces.appendChild(box);
+  };
+  c.faces.forEach(function (f) {
+    // 雙面名片：後端把兩面併成同一列，反面照片在「背面圖片連結」。
+    // 沒有反面就完全不多放一格，也不加「正面」標籤，單面卡看起來跟以前一樣。
+    var hasBack = !!driveId(f.背面圖片連結);
+    addFace(f.圖片連結, hasBack ? "正面" : "");
+    if (hasBack) addFace(f.背面圖片連結, "背面");
   });
   inner.appendChild(faces);
 
